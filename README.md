@@ -5,28 +5,54 @@ import math
 bus = smbus.SMBus(1)
 addr = 0x68
 
-# Разбудить MPU6050
-bus.write_byte_data(addr, 0x6B, 0)
+bus.write_byte_data(addr, 0x6B, 0)  # wake up
 
 def read_word(reg):
     high = bus.read_byte_data(addr, reg)
     low = bus.read_byte_data(addr, reg + 1)
-
     value = (high << 8) | low
-
     if value >= 0x8000:
-        value = -((65535 - value) + 1)
-
+        value -= 65536
     return value
 
-while True:
-    ax = read_word(0x3B)
-    ay = read_word(0x3D)
-    az = read_word(0x3F)
+print("Положи датчик ровно и не трогай...")
+time.sleep(2)
 
-    gx = read_word(0x43)
-    gy = read_word(0x45)
-    gz = read_word(0x47)
+N = 500
+
+ax_off = ay_off = az_off = 0
+gx_off = gy_off = gz_off = 0
+
+for i in range(N):
+    ax_off += read_word(0x3B)
+    ay_off += read_word(0x3D)
+    az_off += read_word(0x3F)
+
+    gx_off += read_word(0x43)
+    gy_off += read_word(0x45)
+    gz_off += read_word(0x47)
+
+    time.sleep(0.005)
+
+ax_off /= N
+ay_off /= N
+az_off = az_off / N - 16384  # Z должен видеть 1g
+
+gx_off /= N
+gy_off /= N
+gz_off /= N
+
+print("Калибровка готова")
+print("Offsets:", ax_off, ay_off, az_off, gx_off, gy_off, gz_off)
+
+while True:
+    ax = read_word(0x3B) - ax_off
+    ay = read_word(0x3D) - ay_off
+    az = read_word(0x3F) - az_off
+
+    gx = read_word(0x43) - gx_off
+    gy = read_word(0x45) - gy_off
+    gz = read_word(0x47) - gz_off
 
     ax_g = ax / 16384.0
     ay_g = ay / 16384.0
@@ -36,9 +62,9 @@ while True:
     pitch = math.degrees(math.atan2(-ax_g, math.sqrt(ay_g**2 + az_g**2)))
 
     print(
-        f"ACC: {ax:6d} {ay:6d} {az:6d} | "
-        f"GYRO: {gx:6d} {gy:6d} {gz:6d} | "
-        f"ROLL: {roll:6.1f} | PITCH: {pitch:6.1f}"
+        f"ROLL: {roll:6.2f} | PITCH: {pitch:6.2f} | "
+        f"ACC: {ax:7.0f} {ay:7.0f} {az:7.0f} | "
+        f"GYRO: {gx:7.0f} {gy:7.0f} {gz:7.0f}"
     )
 
-    time.sleep(0.2)
+    time.sleep(0.1)
